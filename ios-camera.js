@@ -2,10 +2,12 @@
 let videoStream = null;
 let isModelLoaded = false;
 let currentSection = 'scan';
+let woundSegmentationModel = null;
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     initCamera();
+    loadWoundSegmentationModel();
     loadProgressData();
     
     // Add event listeners for patient info changes
@@ -14,6 +16,24 @@ document.addEventListener('DOMContentLoaded', () => {
     
     console.log('iOS Wound Monitor initialized');
 });
+
+// Load wound segmentation model
+async function loadWoundSegmentationModel() {
+    try {
+        showAlert('Loading Model', 'Loading wound detection AI...', 'info');
+        
+        // Load the TensorFlow Lite model
+        woundSegmentationModel = await tflite.loadTFLiteModel('./QATbest_int8.tflite');
+        isModelLoaded = true;
+        
+        showAlert('Model Ready', 'AI wound detection loaded successfully', 'success');
+        console.log('Wound segmentation model loaded:', woundSegmentationModel.inputs[0].shape);
+        
+    } catch (error) {
+        showAlert('Model Error', 'Failed to load wound detection model', 'error');
+        console.error('Model loading error:', error);
+    }
+}
 
 // Tab navigation
 function switchTab(section) {
@@ -230,7 +250,8 @@ function scanQRCode() {
         // Get image data
         const imageData = canvasCtx.getImageData(0, 0, canvas.width, canvas.height);
         
-        // Clear overlay
+        // Only clear QR overlay area, preserve wound overlay
+        const existingImageData = ctx.getImageData(0, 0, overlay.width, overlay.height);
         ctx.clearRect(0, 0, overlay.width, overlay.height);
         
         // Check if jsQR is available
@@ -238,11 +259,20 @@ function scanQRCode() {
             const qrCode = jsQR(imageData.data, imageData.width, imageData.height);
             
             if (qrCode) {
+                // First restore any existing wound overlay
+                ctx.putImageData(existingImageData, 0, 0);
+                
+                // Then draw QR overlay on top
                 drawQROverlay(ctx, qrCode, overlay);
                 updateCalibration(qrCode);
             } else {
+                // Restore wound overlay without QR
+                ctx.putImageData(existingImageData, 0, 0);
                 clearCalibration();
             }
+        } else {
+            // Restore wound overlay
+            ctx.putImageData(existingImageData, 0, 0);
         }
     }
     
@@ -393,25 +423,25 @@ async function captureWound() {
             analyzeImageForQR(canvas);
         }
         
-        // Simulate wound detection
-        const mockMeasurements = {
-            areaCm2: (Math.random() * 5 + 1).toFixed(2),
-            perimeterCm: (Math.random() * 10 + 5).toFixed(2),
-            areaPixels: Math.floor(Math.random() * 1000 + 500),
-            perimeterPixels: Math.floor(Math.random() * 500 + 200),
-            calibrated: true
-        };
+        // Perform wound segmentation
+        const measurements = await performWoundSegmentation(canvas);
         
         // Update measurement display
         document.getElementById('measurementDisplay').style.display = 'block';
-        document.getElementById('woundArea').textContent = mockMeasurements.areaCm2 + ' cm²';
-        document.getElementById('woundPerimeter').textContent = mockMeasurements.perimeterCm + ' cm';
         
-        // Save to local storage (mock)
-        saveScanData(patientName, woundLocation, mockMeasurements);
+        if (measurements.calibrated && window.currentCalibration) {
+            document.getElementById('woundArea').textContent = measurements.areaCm2 + ' cm²';
+            document.getElementById('woundPerimeter').textContent = measurements.perimeterCm + ' cm';
+        } else {
+            document.getElementById('woundArea').textContent = measurements.areaPixels + ' pixels';
+            document.getElementById('woundPerimeter').textContent = measurements.perimeterPixels + ' pixels';
+        }
+        
+        // Save to local storage
+        saveScanData(patientName, woundLocation, measurements);
         
         // Add to timeline
-        addToTimeline(mockMeasurements);
+        addToTimeline(measurements);
         
         showAlert('Scan Complete', 'Wound measurements recorded successfully', 'success');
         
@@ -419,6 +449,242 @@ async function captureWound() {
         showAlert('Capture Error', error.message, 'error');
         console.error('Capture error:', error);
     }
+}
+
+// Perform wound segmentation using TensorFlow Lite model
+async function performWoundSegmentation(canvas) {
+    if (!woundSegmentationModel) {
+        showAlert('Model Not Ready', 'Wound detection model not loaded', 'error');
+        return {
+            areaPixels: 0,
+            perimeterPixels: 0,
+            areaCm2: 0,
+            perimeterCm: 0,
+            calibrated: false
+        };
+    }
+    
+    try {
+        // Prepare input tensor
+        const inputTensor = tf.tidy(() => {
+            let tensor = tf.browser.fromPixels(canvas);
+            
+            // Get model input shape
+            const inputShape = woundSegmentationModel.inputs[0].shape;
+            const targetHeight = inputShape[1] || 224;
+            const targetWidth = inputShape[2] || 224;
+            
+            // Resize to model input size
+            tensor = tf.image.resizeBilinear(tensor, [targetHeight, targetWidth]);
+            
+            // Normalize for int8 quantized model
+            tensor = tf.div(tf.sub(tensor, 127.5), 127.5);
+            
+            // Add batch dimension
+            return tensor.expandDims(0);
+        });
+        
+        // Run inference
+        const predictions = await woundSegmentationModel.predict(inputTensor);
+        
+        // Process model output
+        const maskTensor = tf.tidy(() => {
+            let output = predictions;
+            
+            // Handle multi-channel output
+            if (output.shape.length === 4 && output.shape[3] > 1) {
+                output = tf.slice(output, [0, 0, 0, 1], [1, -1, -1, 1]);
+            }
+            
+            // Remove batch dimension
+            output = tf.squeeze(output, [0]);
+            
+            // Remove channel dimension if present
+            if (output.shape.length === 3) {
+                output = tf.squeeze(output, [2]);
+            }
+            
+            // Apply sigmoid and threshold
+            output = tf.sigmoid(output);
+            const binaryMask = tf.greater(output, 0.5);
+            
+            // Resize back to original canvas size
+            const resized = tf.image.resizeBilinear(
+                binaryMask.expandDims(2).expandDims(0),
+                [canvas.height, canvas.width]
+            );
+            
+            return tf.squeeze(resized).cast('float32');
+        });
+        
+        // Calculate measurements
+        const measurements = await calculateWoundMeasurements(maskTensor, canvas);
+        
+        // Show wound segmentation overlay
+        await showWoundSegmentationOverlay(maskTensor, canvas);
+        
+        // Clean up tensors
+        inputTensor.dispose();
+        predictions.dispose();
+        maskTensor.dispose();
+        
+        return measurements;
+        
+    } catch (error) {
+        console.error('Wound segmentation error:', error);
+        showAlert('Analysis Error', 'Failed to analyze wound: ' + error.message, 'error');
+        return {
+            areaPixels: 0,
+            perimeterPixels: 0,
+            areaCm2: 0,
+            perimeterCm: 0,
+            calibrated: false
+        };
+    }
+}
+
+// Calculate wound measurements from mask
+async function calculateWoundMeasurements(maskTensor, canvas) {
+    const maskData = await maskTensor.data();
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    let woundPixels = 0;
+    let perimeterPixels = 0;
+    
+    // Count wound pixels and estimate perimeter
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const idx = y * width + x;
+            if (maskData[idx] > 0.5) {
+                woundPixels++;
+                
+                // Check if this is a perimeter pixel
+                const isPerimeter = (
+                    x === 0 || x === width - 1 || y === 0 || y === height - 1 ||
+                    maskData[idx - 1] <= 0.5 || maskData[idx + 1] <= 0.5 ||
+                    maskData[idx - width] <= 0.5 || maskData[idx + width] <= 0.5
+                );
+                
+                if (isPerimeter) {
+                    perimeterPixels++;
+                }
+            }
+        }
+    }
+    
+    let areaCm2 = 0;
+    let perimeterCm = 0;
+    let calibrated = false;
+    
+    // Convert to cm if calibrated
+    if (window.currentCalibration) {
+        const pixelsPerCm = window.currentCalibration.pixelsPerCm;
+        areaCm2 = woundPixels / (pixelsPerCm * pixelsPerCm);
+        perimeterCm = perimeterPixels / pixelsPerCm;
+        calibrated = true;
+    }
+    
+    return {
+        areaPixels: woundPixels,
+        perimeterPixels: perimeterPixels,
+        areaCm2: areaCm2.toFixed(2),
+        perimeterCm: perimeterCm.toFixed(2),
+        calibrated: calibrated
+    };
+}
+
+// Show wound segmentation overlay
+async function showWoundSegmentationOverlay(maskTensor, sourceCanvas) {
+    const video = document.getElementById('cameraVideo');
+    const uploadedImage = document.getElementById('uploadedImage');
+    const overlay = document.getElementById('overlayCanvas');
+    
+    if (!overlay) return;
+    
+    // Set overlay size to match the displayed image
+    let displayWidth, displayHeight;
+    if (video.style.display !== 'none') {
+        const rect = video.getBoundingClientRect();
+        displayWidth = rect.width;
+        displayHeight = rect.height;
+    } else {
+        const rect = uploadedImage.getBoundingClientRect();
+        displayWidth = rect.width;
+        displayHeight = rect.height;
+    }
+    
+    overlay.width = displayWidth;
+    overlay.height = displayHeight;
+    overlay.style.display = 'block';
+    
+    const ctx = overlay.getContext('2d');
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    
+    // Get mask data
+    const maskData = await maskTensor.data();
+    const maskWidth = sourceCanvas.width;
+    const maskHeight = sourceCanvas.height;
+    
+    // Create wound overlay
+    const imageData = ctx.createImageData(overlay.width, overlay.height);
+    const data = imageData.data;
+    
+    for (let y = 0; y < overlay.height; y++) {
+        for (let x = 0; x < overlay.width; x++) {
+            // Map overlay coordinates to mask coordinates
+            const maskX = Math.floor((x / overlay.width) * maskWidth);
+            const maskY = Math.floor((y / overlay.height) * maskHeight);
+            const maskIdx = maskY * maskWidth + maskX;
+            
+            const overlayIdx = (y * overlay.width + x) * 4;
+            
+            if (maskData[maskIdx] > 0.5) {
+                // Red overlay for wound area
+                data[overlayIdx] = 255;     // R
+                data[overlayIdx + 1] = 0;   // G
+                data[overlayIdx + 2] = 0;   // B
+                data[overlayIdx + 3] = 100; // A (transparency)
+            } else {
+                // Transparent
+                data[overlayIdx + 3] = 0;
+            }
+        }
+    }
+    
+    ctx.putImageData(imageData, 0, 0);
+    
+    // Draw wound boundary
+    ctx.strokeStyle = '#FF3B30';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    
+    // Simple boundary detection and drawing
+    for (let y = 1; y < overlay.height - 1; y += 2) {
+        for (let x = 1; x < overlay.width - 1; x += 2) {
+            const maskX = Math.floor((x / overlay.width) * maskWidth);
+            const maskY = Math.floor((y / overlay.height) * maskHeight);
+            const maskIdx = maskY * maskWidth + maskX;
+            
+            if (maskData[maskIdx] > 0.5) {
+                // Check if this is a boundary pixel
+                const neighbors = [
+                    maskData[maskIdx - 1],
+                    maskData[maskIdx + 1],
+                    maskData[maskIdx - maskWidth],
+                    maskData[maskIdx + maskWidth]
+                ];
+                
+                if (neighbors.some(n => n <= 0.5)) {
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x + 1, y + 1);
+                }
+            }
+        }
+    }
+    
+    ctx.stroke();
 }
 
 // Analyze uploaded image for QR code
