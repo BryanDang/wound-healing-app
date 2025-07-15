@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wound Progress Monitor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="light-content">
+    <meta name="theme-color" content="#007AFF">
+    <title>Wound Monitor</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/tf-tflite.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
@@ -12,420 +15,657 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        :root {
+            --ios-blue: #007AFF;
+            --ios-green: #34C759;
+            --ios-red: #FF3B30;
+            --ios-yellow: #FFCC00;
+            --ios-gray: #8E8E93;
+            --ios-light-gray: #C7C7CC;
+            --ios-background: #F2F2F7;
+            --ios-secondary-background: #FFFFFF;
+            --ios-tertiary-background: #F2F2F7;
+            --ios-separator: rgba(60, 60, 67, 0.12);
+            --ios-text: #000000;
+            --ios-secondary-text: #3C3C43;
+            --ios-tertiary-text: #C7C7CC;
+            --safe-area-top: env(safe-area-inset-top);
+            --safe-area-bottom: env(safe-area-inset-bottom);
+        }
+        
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --ios-background: #000000;
+                --ios-secondary-background: #1C1C1E;
+                --ios-tertiary-background: #2C2C2E;
+                --ios-separator: rgba(84, 84, 88, 0.65);
+                --ios-text: #FFFFFF;
+                --ios-secondary-text: #8E8E93;
+                --ios-tertiary-text: #48484A;
+            }
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f0f2f5;
-            color: #333;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Icons', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background: var(--ios-background);
+            color: var(--ios-text);
+            font-size: 17px;
+            line-height: 1.47059;
+            font-weight: 400;
+            letter-spacing: -0.022em;
+            min-height: 100vh;
+            overflow-x: hidden;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
         
-        .header {
-            background: linear-gradient(135deg, #2196F3, #1976D2);
-            color: white;
-            padding: 20px;
-            text-align: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        /* iOS Navigation Bar */
+        .nav-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 44px;
+            background: var(--ios-secondary-background);
+            border-bottom: 0.5px solid var(--ios-separator);
+            z-index: 1000;
+            padding-top: var(--safe-area-top);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
         }
         
-        .header h1 {
-            font-size: 2rem;
-            margin-bottom: 5px;
-        }
-        
-        .header p {
-            opacity: 0.9;
-            font-size: 1rem;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        
-        .scan-section {
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            margin-bottom: 30px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-        }
-        
-        .camera-container {
+        .nav-content {
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             position: relative;
-            text-align: center;
-            margin-bottom: 20px;
+            padding: 0 16px;
+        }
+        
+        .nav-title {
+            font-size: 17px;
+            font-weight: 600;
+            letter-spacing: -0.022em;
+        }
+        
+        .nav-button {
+            position: absolute;
+            right: 16px;
+            color: var(--ios-blue);
+            font-size: 17px;
+            font-weight: 400;
+            background: none;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .nav-button:active {
+            opacity: 0.6;
+        }
+        
+        /* Main Content */
+        .main-content {
+            padding-top: calc(44px + var(--safe-area-top));
+            padding-bottom: calc(20px + var(--safe-area-bottom));
+            min-height: 100vh;
+        }
+        
+        /* iOS Cards */
+        .ios-card {
+            background: var(--ios-secondary-background);
+            margin: 16px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.1);
+        }
+        
+        .ios-card-header {
+            padding: 16px;
+            border-bottom: 0.5px solid var(--ios-separator);
+        }
+        
+        .ios-card-title {
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: 0.38px;
+            margin-bottom: 4px;
+        }
+        
+        .ios-card-subtitle {
+            font-size: 13px;
+            color: var(--ios-secondary-text);
+            letter-spacing: -0.08px;
+        }
+        
+        .ios-card-content {
+            padding: 16px;
+        }
+        
+        /* Camera View */
+        .camera-container {
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+            margin-bottom: 16px;
+            aspect-ratio: 4/3;
         }
         
         #cameraVideo {
             width: 100%;
-            max-width: 500px;
-            border-radius: 10px;
-            background: #000;
+            height: 100%;
+            object-fit: cover;
+            display: none;
         }
         
-        .overlay-canvas {
+        #overlayCanvas {
             position: absolute;
             top: 0;
-            left: 50%;
-            transform: translateX(-50%);
+            left: 0;
+            width: 100%;
+            height: 100%;
             pointer-events: none;
-            border-radius: 10px;
+            display: none;
         }
         
-        .controls {
+        .camera-placeholder {
             display: flex;
-            gap: 15px;
+            align-items: center;
             justify-content: center;
-            flex-wrap: wrap;
-            margin: 20px 0;
+            height: 100%;
+            flex-direction: column;
+            color: #8E8E93;
         }
         
-        .btn {
-            background: #2196F3;
+        .camera-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.3;
+        }
+        
+        /* iOS Form Elements */
+        .ios-form-group {
+            margin-bottom: 20px;
+        }
+        
+        .ios-label {
+            display: block;
+            font-size: 13px;
+            color: var(--ios-secondary-text);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: -0.08px;
+        }
+        
+        .ios-input {
+            width: 100%;
+            height: 44px;
+            background: var(--ios-tertiary-background);
+            border: none;
+            border-radius: 10px;
+            padding: 0 16px;
+            font-size: 17px;
+            color: var(--ios-text);
+            -webkit-appearance: none;
+            outline: none;
+        }
+        
+        .ios-input:focus {
+            background: var(--ios-separator);
+        }
+        
+        /* iOS Buttons */
+        .ios-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 50px;
+            background: var(--ios-blue);
             color: white;
             border: none;
-            padding: 12px 25px;
-            border-radius: 8px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: all 0.3s;
-            font-weight: 600;
-        }
-        
-        .btn:hover {
-            background: #1976D2;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(33, 150, 243, 0.3);
-        }
-        
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .btn-success { background: #4CAF50; }
-        .btn-success:hover { background: #45a049; }
-        
-        .btn-warning { background: #FF9800; }
-        .btn-warning:hover { background: #F57C00; }
-        
-        .measurement-display {
-            background: #f8f9fa;
             border-radius: 10px;
-            padding: 20px;
-            margin: 20px 0;
-            border-left: 4px solid #2196F3;
-        }
-        
-        .measurement-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin: 10px 0;
-            padding: 10px;
-            background: white;
-            border-radius: 5px;
-        }
-        
-        .measurement-label {
+            font-size: 17px;
             font-weight: 600;
-            color: #555;
+            letter-spacing: -0.022em;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            transition: opacity 0.2s;
+            width: 100%;
+            margin-bottom: 12px;
         }
         
-        .measurement-value {
-            font-size: 1.1rem;
-            font-weight: bold;
-            color: #2196F3;
+        .ios-button:active {
+            opacity: 0.8;
         }
         
-        .progress-section {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin-bottom: 30px;
+        .ios-button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
         }
         
-        .progress-card {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        .ios-button.secondary {
+            background: var(--ios-tertiary-background);
+            color: var(--ios-blue);
         }
         
-        .progress-card h3 {
-            color: #1976D2;
-            margin-bottom: 20px;
-            font-size: 1.3rem;
+        .ios-button.success {
+            background: var(--ios-green);
         }
         
+        .ios-button.danger {
+            background: var(--ios-red);
+        }
+        
+        /* iOS List */
+        .ios-list {
+            background: var(--ios-secondary-background);
+            border-radius: 10px;
+            margin: 16px;
+            overflow: hidden;
+        }
+        
+        .ios-list-item {
+            padding: 16px;
+            border-bottom: 0.5px solid var(--ios-separator);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 44px;
+        }
+        
+        .ios-list-item:last-child {
+            border-bottom: none;
+        }
+        
+        .ios-list-item-content {
+            flex: 1;
+        }
+        
+        .ios-list-item-title {
+            font-size: 17px;
+            margin-bottom: 2px;
+        }
+        
+        .ios-list-item-subtitle {
+            font-size: 13px;
+            color: var(--ios-secondary-text);
+        }
+        
+        .ios-list-item-value {
+            font-size: 17px;
+            color: var(--ios-blue);
+            font-weight: 500;
+        }
+        
+        /* Status Badge */
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05px;
+        }
+        
+        .status-badge.improving {
+            background: rgba(52, 199, 89, 0.15);
+            color: var(--ios-green);
+        }
+        
+        .status-badge.stable {
+            background: rgba(255, 204, 0, 0.15);
+            color: var(--ios-yellow);
+        }
+        
+        .status-badge.concerning {
+            background: rgba(255, 59, 48, 0.15);
+            color: var(--ios-red);
+        }
+        
+        /* Progress Timeline */
         .timeline {
-            position: relative;
-            padding-left: 30px;
-        }
-        
-        .timeline::before {
-            content: '';
-            position: absolute;
-            left: 10px;
-            top: 0;
-            bottom: 0;
-            width: 2px;
-            background: #E0E0E0;
+            padding: 0;
         }
         
         .timeline-item {
+            padding: 16px;
+            border-left: 2px solid var(--ios-separator);
+            margin-left: 16px;
             position: relative;
-            margin-bottom: 25px;
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 8px;
         }
         
-        .timeline-item::before {
+        .timeline-item:before {
             content: '';
             position: absolute;
-            left: -25px;
+            left: -6px;
             top: 20px;
-            width: 12px;
-            height: 12px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
-            background: #2196F3;
+            background: var(--ios-blue);
+            border: 2px solid var(--ios-secondary-background);
         }
         
         .timeline-date {
-            font-size: 0.9rem;
-            color: #666;
-            margin-bottom: 5px;
+            font-size: 13px;
+            color: var(--ios-secondary-text);
+            margin-bottom: 4px;
         }
         
-        .timeline-measurement {
-            font-weight: bold;
-            color: #333;
+        .timeline-content {
+            font-size: 17px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
         
-        .recommendations {
-            background: #E8F5E8;
+        /* Alert */
+        .ios-alert {
+            position: fixed;
+            top: calc(44px + var(--safe-area-top) + 16px);
+            left: 16px;
+            right: 16px;
+            background: var(--ios-secondary-background);
+            border-radius: 14px;
+            padding: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            z-index: 2000;
+            transform: translateY(-100px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+        
+        .ios-alert.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        
+        .ios-alert-title {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .ios-alert-message {
+            font-size: 13px;
+            color: var(--ios-secondary-text);
+        }
+        
+        .ios-alert.success .ios-alert-title {
+            color: var(--ios-green);
+        }
+        
+        .ios-alert.error .ios-alert-title {
+            color: var(--ios-red);
+        }
+        
+        .ios-alert.warning .ios-alert-title {
+            color: var(--ios-yellow);
+        }
+        
+        /* Tab Bar */
+        .tab-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 49px;
+            background: var(--ios-secondary-background);
+            border-top: 0.5px solid var(--ios-separator);
+            display: flex;
+            padding-bottom: var(--safe-area-bottom);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+        
+        .tab-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 49px;
+            color: var(--ios-gray);
+            font-size: 10px;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .tab-item.active {
+            color: var(--ios-blue);
+        }
+        
+        .tab-icon {
+            font-size: 24px;
+            margin-bottom: 2px;
+        }
+        
+        /* Sections */
+        .section {
+            display: none;
+        }
+        
+        .section.active {
+            display: block;
+        }
+        
+        /* Recommendations */
+        .recommendation-card {
+            background: var(--ios-tertiary-background);
             border-radius: 10px;
-            padding: 20px;
-            border-left: 4px solid #4CAF50;
-        }
-        
-        .recommendation-item {
-            background: white;
-            margin: 10px 0;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 3px solid #4CAF50;
+            padding: 16px;
+            margin-bottom: 12px;
         }
         
         .recommendation-title {
-            font-weight: bold;
-            color: #2E7D32;
-            margin-bottom: 5px;
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: var(--ios-green);
         }
         
         .recommendation-text {
-            color: #555;
-            line-height: 1.5;
+            font-size: 15px;
+            color: var(--ios-secondary-text);
+            line-height: 1.4;
         }
         
-        .status-indicator {
+        /* Loading Spinner */
+        .spinner {
             display: inline-block;
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            font-weight: bold;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--ios-separator);
+            border-top-color: var(--ios-blue);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
         }
         
-        .status-improving {
-            background: #C8E6C9;
-            color: #2E7D32;
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
         
-        .status-stable {
-            background: #FFF3E0;
-            color: #F57C00;
-        }
-        
-        .status-concerning {
-            background: #FFCDD2;
-            color: #C62828;
-        }
-        
-        .patient-info {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            margin-bottom: 30px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #555;
-        }
-        
-        .form-group input, .form-group select {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #E0E0E0;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s;
-        }
-        
-        .form-group input:focus, .form-group select:focus {
-            outline: none;
-            border-color: #2196F3;
-        }
-        
-        .alert {
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-            font-weight: 600;
-        }
-        
-        .alert-success {
-            background: #D4EDDA;
-            color: #155724;
-            border: 1px solid #C3E6CB;
-        }
-        
-        .alert-warning {
-            background: #FFF3CD;
-            color: #856404;
-            border: 1px solid #FFEAA7;
-        }
-        
-        .alert-error {
-            background: #F8D7DA;
-            color: #721C24;
-            border: 1px solid #F5C6CB;
-        }
-        
-        .provider-notification {
-            background: #E3F2FD;
-            border-radius: 10px;
-            padding: 20px;
-            margin: 20px 0;
-            border-left: 4px solid #2196F3;
-        }
-        
-        @media (max-width: 768px) {
-            .progress-section {
-                grid-template-columns: 1fr;
+        /* Responsive adjustments */
+        @media (max-width: 375px) {
+            body {
+                font-size: 16px;
             }
             
-            .controls {
-                flex-direction: column;
-                align-items: center;
+            .ios-card {
+                margin: 12px;
             }
             
-            .btn {
-                width: 100%;
-                max-width: 300px;
+            .ios-card-title {
+                font-size: 18px;
+            }
+        }
+        
+        @media (min-width: 768px) {
+            .main-content {
+                max-width: 600px;
+                margin: 0 auto;
             }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Wound Progress Monitor</h1>
-        <p>Track healing progress with QR code calibration</p>
+    <!-- Navigation Bar -->
+    <div class="nav-bar">
+        <div class="nav-content">
+            <div class="nav-title">Wound Monitor</div>
+            <button class="nav-button" onclick="showSettings()">Settings</button>
+        </div>
     </div>
     
-    <div class="container">
-        <!-- Patient Information -->
-        <div class="patient-info">
-            <h3>Patient Information</h3>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                <div class="form-group">
-                    <label for="patientId">Patient ID</label>
-                    <input type="text" id="patientId" placeholder="Enter patient ID">
+    <!-- Main Content -->
+    <div class="main-content" style="padding-bottom: calc(49px + var(--safe-area-bottom));">
+        <!-- Scan Section -->
+        <div id="scanSection" class="section active">
+            <!-- Patient Info Card -->
+            <div class="ios-card">
+                <div class="ios-card-header">
+                    <div class="ios-card-title">Patient Information</div>
+                    <div class="ios-card-subtitle">Enter patient details to begin</div>
                 </div>
-                <div class="form-group">
-                    <label for="providerId">Provider ID</label>
-                    <input type="text" id="providerId" placeholder="Enter provider ID">
+                <div class="ios-card-content">
+                    <div class="ios-form-group">
+                        <label class="ios-label">Patient ID</label>
+                        <input type="text" id="patientId" class="ios-input" placeholder="Enter patient ID" autocomplete="off">
+                    </div>
+                    <div class="ios-form-group">
+                        <label class="ios-label">Provider ID</label>
+                        <input type="text" id="providerId" class="ios-input" placeholder="Enter provider ID" autocomplete="off">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Camera Card -->
+            <div class="ios-card">
+                <div class="ios-card-header">
+                    <div class="ios-card-title">Wound Scan</div>
+                    <div class="ios-card-subtitle">Position QR code next to wound for calibration</div>
+                </div>
+                <div class="ios-card-content">
+                    <div class="camera-container">
+                        <video id="cameraVideo" autoplay playsinline muted></video>
+                        <canvas id="overlayCanvas"></canvas>
+                        <div class="camera-placeholder" id="cameraPlaceholder">
+                            <div class="camera-icon">📷</div>
+                            <div>Tap "Start Camera" to begin</div>
+                        </div>
+                    </div>
+                    
+                    <button class="ios-button" id="startCameraBtn">
+                        Start Camera
+                    </button>
+                    <button class="ios-button success" id="captureBtn" disabled>
+                        Capture Wound Scan
+                    </button>
+                    <button class="ios-button secondary" id="stopCameraBtn" disabled>
+                        Stop Camera
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Measurement Display -->
+            <div class="ios-list" id="measurementDisplay" style="display: none;">
+                <div class="ios-list-item">
+                    <div class="ios-list-item-content">
+                        <div class="ios-list-item-title">Wound Area</div>
+                    </div>
+                    <div class="ios-list-item-value" id="woundArea">-- cm²</div>
+                </div>
+                <div class="ios-list-item">
+                    <div class="ios-list-item-content">
+                        <div class="ios-list-item-title">Wound Perimeter</div>
+                    </div>
+                    <div class="ios-list-item-value" id="woundPerimeter">-- cm</div>
+                </div>
+                <div class="ios-list-item">
+                    <div class="ios-list-item-content">
+                        <div class="ios-list-item-title">QR Code Detected</div>
+                    </div>
+                    <div class="ios-list-item-value" id="qrStatus">No</div>
+                </div>
+                <div class="ios-list-item">
+                    <div class="ios-list-item-content">
+                        <div class="ios-list-item-title">Calibration Scale</div>
+                    </div>
+                    <div class="ios-list-item-value" id="calibrationScale">-- px/cm</div>
                 </div>
             </div>
         </div>
         
-        <!-- Scanning Section -->
-        <div class="scan-section">
-            <h3>Wound Scan with QR Code Calibration</h3>
-            <p style="color: #666; margin-bottom: 20px;">
-                Position the QR code next to the wound for accurate size measurement
-            </p>
-            
-            <div class="camera-container">
-                <video id="cameraVideo" autoplay playsinline muted></video>
-                <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
-            </div>
-            
-            <div class="controls">
-                <button class="btn" id="startCameraBtn">Start Camera</button>
-                <button class="btn btn-success" id="captureBtn" disabled>Capture Wound Scan</button>
-                <button class="btn btn-warning" id="stopCameraBtn" disabled>Stop Camera</button>
-            </div>
-            
-            <div id="measurementDisplay" class="measurement-display" style="display: none;">
-                <h4>Current Measurements</h4>
-                <div class="measurement-item">
-                    <span class="measurement-label">Wound Area:</span>
-                    <span class="measurement-value" id="woundArea">-- cm²</span>
+        <!-- Progress Section -->
+        <div id="progressSection" class="section">
+            <div class="ios-card">
+                <div class="ios-card-header">
+                    <div class="ios-card-title">Healing Progress</div>
+                    <div class="ios-card-subtitle">Track wound healing over time</div>
                 </div>
-                <div class="measurement-item">
-                    <span class="measurement-label">Wound Perimeter:</span>
-                    <span class="measurement-value" id="woundPerimeter">-- cm</span>
-                </div>
-                <div class="measurement-item">
-                    <span class="measurement-label">QR Code Detected:</span>
-                    <span class="measurement-value" id="qrStatus">No</span>
-                </div>
-                <div class="measurement-item">
-                    <span class="measurement-label">Calibration Scale:</span>
-                    <span class="measurement-value" id="calibrationScale">-- px/cm</span>
+                <div class="ios-card-content">
+                    <div class="timeline" id="progressTimeline">
+                        <div style="text-align: center; color: var(--ios-secondary-text); padding: 32px;">
+                            No scans recorded yet
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
         
-        <!-- Progress Tracking -->
-        <div class="progress-section">
-            <div class="progress-card">
-                <h3>Healing Progress</h3>
-                <div class="timeline" id="progressTimeline">
-                    <!-- Timeline items will be populated here -->
+        <!-- Recommendations Section -->
+        <div id="recommendationsSection" class="section">
+            <div class="ios-card">
+                <div class="ios-card-header">
+                    <div class="ios-card-title">Treatment Recommendations</div>
+                    <div class="ios-card-subtitle">Based on wound progression</div>
                 </div>
-            </div>
-            
-            <div class="progress-card">
-                <h3>Treatment Recommendations</h3>
-                <div class="recommendations" id="recommendations">
-                    <!-- Recommendations will be populated here -->
+                <div class="ios-card-content" id="recommendationsContent">
+                    <div class="recommendation-card">
+                        <div class="recommendation-title">Daily Care</div>
+                        <div class="recommendation-text">
+                            Continue gentle cleaning with saline solution and apply prescribed dressing.
+                        </div>
+                    </div>
+                    <div class="recommendation-card">
+                        <div class="recommendation-title">Monitor Signs</div>
+                        <div class="recommendation-text">
+                            Watch for increased redness, swelling, warmth, or unusual discharge.
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-        
-        <!-- Provider Notification -->
-        <div class="provider-notification" id="providerNotification" style="display: none;">
-            <h4>Provider Notification</h4>
-            <p id="notificationMessage"></p>
-        </div>
-        
-        <!-- Status Messages -->
-        <div id="statusMessages"></div>
     </div>
-
-    <script src="camera-fix.js"></script>
+    
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+        <div class="tab-item active" onclick="switchTab('scan')">
+            <div class="tab-icon">📷</div>
+            <div>Scan</div>
+        </div>
+        <div class="tab-item" onclick="switchTab('progress')">
+            <div class="tab-icon">📊</div>
+            <div>Progress</div>
+        </div>
+        <div class="tab-item" onclick="switchTab('recommendations')">
+            <div class="tab-icon">💊</div>
+            <div>Treatment</div>
+        </div>
+    </div>
+    
+    <!-- Alerts Container -->
+    <div id="alertContainer"></div>
+    
+    <script src="ios-camera.js"></script>
 </body>
 </html>
