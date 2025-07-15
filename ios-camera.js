@@ -7,6 +7,11 @@ let currentSection = 'scan';
 document.addEventListener('DOMContentLoaded', () => {
     initCamera();
     loadProgressData();
+    
+    // Add event listeners for patient info changes
+    document.getElementById('patientName').addEventListener('change', loadProgressData);
+    document.getElementById('woundLocation').addEventListener('change', loadProgressData);
+    
     console.log('iOS Wound Monitor initialized');
 });
 
@@ -48,12 +53,16 @@ async function initCamera() {
     const startBtn = document.getElementById('startCameraBtn');
     const stopBtn = document.getElementById('stopCameraBtn');
     const captureBtn = document.getElementById('captureBtn');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const imageUpload = document.getElementById('imageUpload');
+    const uploadedImage = document.getElementById('uploadedImage');
     const placeholder = document.getElementById('cameraPlaceholder');
 
     // Check browser support
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         showAlert('Camera Not Supported', 'Your browser does not support camera access', 'error');
-        return;
+        // Hide camera button if not supported
+        startBtn.style.display = 'none';
     }
 
     startBtn.addEventListener('click', async () => {
@@ -141,6 +150,49 @@ async function initCamera() {
     });
 
     captureBtn.addEventListener('click', captureWound);
+
+    // Image upload functionality
+    uploadBtn.addEventListener('click', () => {
+        if (navigator.vibrate) navigator.vibrate(10);
+        imageUpload.click();
+    });
+
+    imageUpload.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            showAlert('Invalid File', 'Please select an image file', 'error');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            // Stop camera if running
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+
+            // Hide video and show uploaded image
+            video.style.display = 'none';
+            uploadedImage.src = e.target.result;
+            uploadedImage.style.display = 'block';
+            placeholder.style.display = 'none';
+
+            // Update button states
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            captureBtn.disabled = false;
+            captureBtn.textContent = 'Analyze Uploaded Image';
+
+            // Store the uploaded image for analysis
+            window.uploadedImageData = e.target.result;
+
+            showAlert('Image Loaded', 'Image uploaded successfully. Ensure QR code is visible for calibration.', 'success');
+        };
+        reader.readAsDataURL(file);
+    });
 }
 
 // QR Code scanning
@@ -294,27 +346,52 @@ async function captureWound() {
     if (navigator.vibrate) navigator.vibrate([10, 50, 10]);
     
     const video = document.getElementById('cameraVideo');
-    const patientId = document.getElementById('patientId').value;
+    const uploadedImage = document.getElementById('uploadedImage');
+    const patientName = document.getElementById('patientName').value;
+    const woundLocation = document.getElementById('woundLocation').value;
     
-    if (!patientId) {
-        showAlert('Patient ID Required', 'Please enter a patient ID before capturing', 'warning');
+    if (!patientName) {
+        showAlert('Name Required', 'Please enter your name before analyzing', 'warning');
         return;
     }
     
-    if (!window.currentCalibration) {
-        showAlert('QR Code Required', 'Please ensure QR code is visible for calibration', 'warning');
+    if (!woundLocation) {
+        showAlert('Location Required', 'Please select wound location before analyzing', 'warning');
+        return;
+    }
+    
+    // Check if we have an image source (camera or uploaded)
+    const hasVideo = video.style.display !== 'none' && videoStream;
+    const hasUploadedImage = uploadedImage.style.display !== 'none';
+    
+    if (!hasVideo && !hasUploadedImage) {
+        showAlert('No Image', 'Please take a photo or upload an image first', 'warning');
         return;
     }
     
     try {
         showAlert('Processing', 'Analyzing wound...', 'info');
         
-        // Create canvas from video
+        // Create canvas from appropriate source
         const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0);
+        
+        if (hasVideo) {
+            // From camera
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+        } else {
+            // From uploaded image
+            canvas.width = uploadedImage.naturalWidth;
+            canvas.height = uploadedImage.naturalHeight;
+            ctx.drawImage(uploadedImage, 0, 0);
+        }
+        
+        // Analyze the image for QR code if not already detected
+        if (!window.currentCalibration) {
+            analyzeImageForQR(canvas);
+        }
         
         // Simulate wound detection
         const mockMeasurements = {
@@ -331,7 +408,7 @@ async function captureWound() {
         document.getElementById('woundPerimeter').textContent = mockMeasurements.perimeterCm + ' cm';
         
         // Save to local storage (mock)
-        saveScanData(patientId, mockMeasurements);
+        saveScanData(patientName, woundLocation, mockMeasurements);
         
         // Add to timeline
         addToTimeline(mockMeasurements);
@@ -344,14 +421,50 @@ async function captureWound() {
     }
 }
 
+// Analyze uploaded image for QR code
+function analyzeImageForQR(canvas) {
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    
+    if (typeof jsQR !== 'undefined') {
+        const qrCode = jsQR(imageData.data, imageData.width, imageData.height);
+        
+        if (qrCode) {
+            // Calculate QR code size
+            const qrWidth = Math.abs(qrCode.location.topRightCorner.x - qrCode.location.topLeftCorner.x);
+            const qrHeight = Math.abs(qrCode.location.bottomLeftCorner.y - qrCode.location.topLeftCorner.y);
+            const qrSizePixels = (qrWidth + qrHeight) / 2;
+            
+            // Standard QR code is 2.5cm x 2.5cm
+            const pixelsPerCm = qrSizePixels / 2.5;
+            
+            // Update calibration
+            window.currentCalibration = {
+                pixelsPerCm: pixelsPerCm,
+                qrCode: qrCode
+            };
+            
+            // Update display
+            document.getElementById('qrStatus').textContent = 'Yes';
+            document.getElementById('qrStatus').style.color = 'var(--ios-green)';
+            document.getElementById('calibrationScale').textContent = pixelsPerCm.toFixed(0) + ' px/cm';
+            
+            showAlert('QR Code Found', 'Calibration successful!', 'success');
+        } else {
+            showAlert('No QR Code', 'QR code not found in image. Measurements will be in pixels only.', 'warning');
+        }
+    }
+}
+
 // Save scan data to local storage
-function saveScanData(patientId, measurements) {
+function saveScanData(patientName, woundLocation, measurements) {
     const scans = JSON.parse(localStorage.getItem('woundScans') || '[]');
     
     const scanData = {
         id: Date.now().toString(),
-        patientId: patientId,
-        providerId: document.getElementById('providerId').value,
+        patientName: patientName,
+        woundLocation: woundLocation,
+        providerName: document.getElementById('providerName').value,
         timestamp: new Date().toISOString(),
         measurements: measurements
     };
@@ -368,11 +481,15 @@ function saveScanData(patientId, measurements) {
 
 // Load progress data
 function loadProgressData() {
-    const patientId = document.getElementById('patientId').value;
-    if (!patientId) return;
+    const patientName = document.getElementById('patientName').value;
+    const woundLocation = document.getElementById('woundLocation').value;
+    
+    if (!patientName || !woundLocation) return;
     
     const scans = JSON.parse(localStorage.getItem('woundScans') || '[]');
-    const patientScans = scans.filter(s => s.patientId === patientId);
+    const patientScans = scans.filter(s => 
+        s.patientName === patientName && s.woundLocation === woundLocation
+    );
     
     displayProgressTimeline(patientScans);
     updateRecommendations(patientScans);

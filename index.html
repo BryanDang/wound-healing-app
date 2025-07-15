@@ -534,16 +534,29 @@
             <div class="ios-card">
                 <div class="ios-card-header">
                     <div class="ios-card-title">Patient Information</div>
-                    <div class="ios-card-subtitle">Enter patient details to begin</div>
+                    <div class="ios-card-subtitle">Enter your details to begin tracking</div>
                 </div>
                 <div class="ios-card-content">
                     <div class="ios-form-group">
-                        <label class="ios-label">Patient ID</label>
-                        <input type="text" id="patientId" class="ios-input" placeholder="Enter patient ID" autocomplete="off">
+                        <label class="ios-label">Your Name</label>
+                        <input type="text" id="patientName" class="ios-input" placeholder="Enter your name" autocomplete="name">
                     </div>
                     <div class="ios-form-group">
-                        <label class="ios-label">Provider ID</label>
-                        <input type="text" id="providerId" class="ios-input" placeholder="Enter provider ID" autocomplete="off">
+                        <label class="ios-label">Wound Location</label>
+                        <select id="woundLocation" class="ios-input">
+                            <option value="">Select location</option>
+                            <option value="arm">Arm</option>
+                            <option value="leg">Leg</option>
+                            <option value="hand">Hand</option>
+                            <option value="foot">Foot</option>
+                            <option value="chest">Chest</option>
+                            <option value="back">Back</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="ios-form-group">
+                        <label class="ios-label">Healthcare Provider (Optional)</label>
+                        <input type="text" id="providerName" class="ios-input" placeholder="Doctor or clinic name" autocomplete="off">
                     </div>
                 </div>
             </div>
@@ -558,21 +571,27 @@
                     <div class="camera-container">
                         <video id="cameraVideo" autoplay playsinline muted></video>
                         <canvas id="overlayCanvas"></canvas>
+                        <img id="uploadedImage" style="display: none; width: 100%; height: 100%; object-fit: cover;">
                         <div class="camera-placeholder" id="cameraPlaceholder">
                             <div class="camera-icon">📷</div>
-                            <div>Tap "Start Camera" to begin</div>
+                            <div>Take photo with camera or upload existing image</div>
                         </div>
                     </div>
                     
                     <button class="ios-button" id="startCameraBtn">
-                        Start Camera
+                        📷 Use Camera
+                    </button>
+                    <button class="ios-button secondary" id="uploadBtn">
+                        📁 Upload Image
                     </button>
                     <button class="ios-button success" id="captureBtn" disabled>
-                        Capture Wound Scan
+                        Analyze Wound
                     </button>
                     <button class="ios-button secondary" id="stopCameraBtn" disabled>
                         Stop Camera
                     </button>
+                    
+                    <input type="file" id="imageUpload" accept="image/*" style="display: none;">
                 </div>
             </div>
             
