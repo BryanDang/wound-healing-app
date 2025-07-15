@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wound Progress Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/tf-tflite.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f0f2f5;
+            color: #333;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #2196F3, #1976D2);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 5px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1rem;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .scan-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        
+        .camera-container {
+            position: relative;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        #cameraVideo {
+            width: 100%;
+            max-width: 500px;
+            border-radius: 10px;
+            background: #000;
+        }
+        
+        .overlay-canvas {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: none;
+            border-radius: 10px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 20px 0;
+        }
+        
+        .btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+        
+        .btn:hover {
+            background: #1976D2;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(33, 150, 243, 0.3);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-success { background: #4CAF50; }
+        .btn-success:hover { background: #45a049; }
+        
+        .btn-warning { background: #FF9800; }
+        .btn-warning:hover { background: #F57C00; }
+        
+        .measurement-display {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 4px solid #2196F3;
+        }
+        
+        .measurement-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+        }
+        
+        .measurement-label {
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .measurement-value {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #2196F3;
+        }
+        
+        .progress-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .progress-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        
+        .progress-card h3 {
+            color: #1976D2;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+        }
+        
+        .timeline {
+            position: relative;
+            padding-left: 30px;
+        }
+        
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 10px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #E0E0E0;
+        }
+        
+        .timeline-item {
+            position: relative;
+            margin-bottom: 25px;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -25px;
+            top: 20px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #2196F3;
+        }
+        
+        .timeline-date {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .timeline-measurement {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .recommendations {
+            background: #E8F5E8;
+            border-radius: 10px;
+            padding: 20px;
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .recommendation-item {
+            background: white;
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 3px solid #4CAF50;
+        }
+        
+        .recommendation-title {
+            font-weight: bold;
+            color: #2E7D32;
+            margin-bottom: 5px;
+        }
+        
+        .recommendation-text {
+            color: #555;
+            line-height: 1.5;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+        
+        .status-improving {
+            background: #C8E6C9;
+            color: #2E7D32;
+        }
+        
+        .status-stable {
+            background: #FFF3E0;
+            color: #F57C00;
+        }
+        
+        .status-concerning {
+            background: #FFCDD2;
+            color: #C62828;
+        }
+        
+        .patient-info {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #E0E0E0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+        
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-weight: 600;
+        }
+        
+        .alert-success {
+            background: #D4EDDA;
+            color: #155724;
+            border: 1px solid #C3E6CB;
+        }
+        
+        .alert-warning {
+            background: #FFF3CD;
+            color: #856404;
+            border: 1px solid #FFEAA7;
+        }
+        
+        .alert-error {
+            background: #F8D7DA;
+            color: #721C24;
+            border: 1px solid #F5C6CB;
+        }
+        
+        .provider-notification {
+            background: #E3F2FD;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 4px solid #2196F3;
+        }
+        
+        @media (max-width: 768px) {
+            .progress-section {
+                grid-template-columns: 1fr;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .btn {
+                width: 100%;
+                max-width: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Wound Progress Monitor</h1>
+        <p>Track healing progress with QR code calibration</p>
+    </div>
+    
+    <div class="container">
+        <!-- Patient Information -->
+        <div class="patient-info">
+            <h3>Patient Information</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div class="form-group">
+                    <label for="patientId">Patient ID</label>
+                    <input type="text" id="patientId" placeholder="Enter patient ID">
+                </div>
+                <div class="form-group">
+                    <label for="providerId">Provider ID</label>
+                    <input type="text" id="providerId" placeholder="Enter provider ID">
+                </div>
+            </div>
+        </div>
+        
+        <!-- Scanning Section -->
+        <div class="scan-section">
+            <h3>Wound Scan with QR Code Calibration</h3>
+            <p style="color: #666; margin-bottom: 20px;">
+                Position the QR code next to the wound for accurate size measurement
+            </p>
+            
+            <div class="camera-container">
+                <video id="cameraVideo" autoplay playsinline muted></video>
+                <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
+            </div>
+            
+            <div class="controls">
+                <button class="btn" id="startCameraBtn" onclick="startCamera()">Start Camera</button>
+                <button class="btn btn-success" id="captureBtn" onclick="captureWoundImage()" disabled>Capture Wound Scan</button>
+                <button class="btn btn-warning" id="stopCameraBtn" onclick="stopCamera()" disabled>Stop Camera</button>
+            </div>
+            
+            <div id="measurementDisplay" class="measurement-display" style="display: none;">
+                <h4>Current Measurements</h4>
+                <div class="measurement-item">
+                    <span class="measurement-label">Wound Area:</span>
+                    <span class="measurement-value" id="woundArea">-- cm²</span>
+                </div>
+                <div class="measurement-item">
+                    <span class="measurement-label">Wound Perimeter:</span>
+                    <span class="measurement-value" id="woundPerimeter">-- cm</span>
+                </div>
+                <div class="measurement-item">
+                    <span class="measurement-label">QR Code Detected:</span>
+                    <span class="measurement-value" id="qrStatus">No</span>
+                </div>
+                <div class="measurement-item">
+                    <span class="measurement-label">Calibration Scale:</span>
+                    <span class="measurement-value" id="calibrationScale">-- px/cm</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Progress Tracking -->
+        <div class="progress-section">
+            <div class="progress-card">
+                <h3>Healing Progress</h3>
+                <div class="timeline" id="progressTimeline">
+                    <!-- Timeline items will be populated here -->
+                </div>
+            </div>
+            
+            <div class="progress-card">
+                <h3>Treatment Recommendations</h3>
+                <div class="recommendations" id="recommendations">
+                    <!-- Recommendations will be populated here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Provider Notification -->
+        <div class="provider-notification" id="providerNotification" style="display: none;">
+            <h4>Provider Notification</h4>
+            <p id="notificationMessage"></p>
+        </div>
+        
+        <!-- Status Messages -->
+        <div id="statusMessages"></div>
+    </div>
+
+    <script src="wound-monitor.js"></script>
+</body>
+</html>
